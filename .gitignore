@@ -13,3 +13,6 @@ Thumbs.db
 
 # Arquivos de lock de editores (LibreOffice/Word)
 **/.~lock.*#
+
+# Build local do .skill (gerado por package_skill.py, nao versionar)
+dist/
