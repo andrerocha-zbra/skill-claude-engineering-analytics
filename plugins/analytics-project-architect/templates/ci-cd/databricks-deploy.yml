@@ -1,0 +1,87 @@
+# Template de CI/CD para Databricks Asset Bundles.
+# Copie para <repo-cliente>/.github/workflows/databricks-deploy.yml e ajuste os
+# placeholders {{...}}. Requer os secrets DATABRICKS_HOST e DATABRICKS_TOKEN
+# (ou um Service Principal, recomendado para prod) configurados no repositório.
+
+name: Deploy Databricks ({{CLIENTE}})
+
+on:
+  pull_request:
+    paths:
+      - "datalake/_tech-sync/**"
+  push:
+    branches: [main]
+    paths:
+      - "datalake/_tech-sync/**"
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: datalake/_tech-sync
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validar notebooks (JSON + sintaxe)
+        run: |
+          python3 -c "
+          import glob, json, ast, sys
+          erro = False
+          for caminho in glob.glob('**/*.ipynb', recursive=True):
+              with open(caminho, encoding='utf-8') as f:
+                  nb = json.load(f)
+              for i, cell in enumerate(nb.get('cells', [])):
+                  if cell.get('cell_type') != 'code':
+                      continue
+                  fonte = cell.get('source', '')
+                  codigo = ''.join(fonte) if isinstance(fonte, list) else fonte
+                  try:
+                      ast.parse(codigo)
+                  except SyntaxError as e:
+                      print(f'{caminho} celula {i}: {e}')
+                      erro = True
+          sys.exit(1 if erro else 0)
+          "
+
+      - name: Validar bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate -t dev
+
+  deploy-dev:
+    needs: validar
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: datalake/_tech-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy dev
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle deploy -t dev
+
+  deploy-prod:
+    needs: validar
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production  # exige aprovacao manual se configurado em Settings > Environments
+    defaults:
+      run:
+        working-directory: datalake/_tech-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy prod
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST_PROD }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN_PROD }}
+        run: databricks bundle deploy -t prod

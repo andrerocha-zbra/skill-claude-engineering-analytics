@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "analytics-engineering-harness",
+  "description": "Marketplace privado com o harness de engenharia de analytics: skill guarda-chuva (kickoff -> handoff), scripts de scaffolding/notebook e hooks para projetos de dados (Fabric/Databricks/Power BI).",
+  "owner": {
+    "name": "SEU_NOME",
+    "email": "seu-email@exemplo.com"
+  },
+  "plugins": [
+    {
+      "name": "analytics-project-architect",
+      "description": "Estrutura e conduz projetos de dados (BI, engenharia, ML) do kickoff ao handoff -- padroniza pastas/nomenclatura, transforma reunioes em atas/specs/tasks, mantem um log vivo (PROJETO.md), roteia a execucao tecnica (Fabric, Databricks, Power BI, documentacao) e configura CI/CD seletivo.",
+      "author": {
+        "name": "SEU_NOME",
+        "email": "seu-email@exemplo.com"
+      },
+      "category": "data-engineering",
+      "source": "./plugins/analytics-project-architect"
+    }
+  ]
+}

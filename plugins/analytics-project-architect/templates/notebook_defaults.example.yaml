@@ -1,0 +1,376 @@
+# notebook_defaults.example.yaml — configuração reutilizável dos notebooks de datalake do projeto.
+# Fonte de verdade legível por máquina para: responsável, layout de notebook, schemas, sistema(s)
+# de origem, parâmetros canônicos e regras default. As references desta skill descrevem o "porquê";
+# este arquivo lista os valores. Fundido a partir de dois projetos reais (um em Microsoft Fabric,
+# outro em Databricks/Unity Catalog) — copie para `datalake/_tech-sync/config/notebook_defaults.yaml`
+# no projeto novo, preencha os `{{PLACEHOLDERS}}` e apague o bloco de overlay (`fabric:` ou
+# `databricks:`) que não se aplica.
+
+project: "{{CLIENTE}}"
+default_language: pt-BR
+
+# Escolhe qual dos dois overlays técnicos abaixo (bloco `fabric:` ou `databricks:`) vale para este
+# projeto. Define também qual reference desta skill conduz a Fase 1 (Dados).
+cloud: fabric   # fabric | databricks
+
+developer:
+  name: "{{DESENVOLVEDOR_PADRAO}}"   # OWNER default nos headers de notebook, salvo quando o usuário informar outro
+  field_label: Desenvolvido por
+
+# ────────────────────────────────────────────────────────────────────────────
+# Layout de notebook — nomenclatura física de arquivo, cabeçalho, seções Markdown
+# ────────────────────────────────────────────────────────────────────────────
+notebook_layout:
+  # nb_<camada> agrupa por camada; o nome físico do .ipynb segue o padrão abaixo, sem exceção.
+  # Fabric: bronze costuma ser um mirrored database (sem notebook de ingestão próprio) — ver
+  # platform.bronze_is_mirrored no bloco `fabric:`. Databricks: as 3 camadas têm notebook próprio.
+  folder_pattern:
+    bronze: "{{tech_sync}}/bronze/<ENTIDADE>/NB_BRONZE_<ENTIDADE>.ipynb"           # Databricks (ou Fabric não-mirrored)
+    silver: "{{tech_sync}}/silver/<ENTIDADE>/NB_SILVER_<ENTIDADE>.ipynb"
+    gold: "{{tech_sync}}/gold/<ENTIDADE>/NB_GOLD_<ENTIDADE>.ipynb"
+  # Padrão dual (Fabric): a maioria das Silver/Gold existe como par PySpark + irmã _SQL (mesmo
+  # contrato de saída), para o PO/analista revisar as regras de negócio em SQL puro. Plumbing
+  # (parâmetros, watermark, escrita Delta) sempre em Python nos dois. Default false em Databricks.
+  dual_pyspark_and_sql: true
+  header_fields:
+    - camada
+    - subdominio          # opcional — omitir se o projeto não segmenta por subdomínio
+    - entidade
+    - descricao
+    - desenvolvido_por
+    - criado_em
+    - sistema_origem      # ou sistemas_origem, se a entidade combina mais de uma fonte
+  # Rótulos de seção Markdown padrão (#### ...) na ordem do fluxo do notebook — Silver. Adaptar
+  # a numeração ao estilo do projeto (Fabric tende a nomes descritivos sem número; Databricks
+  # tende a numerar "1. Bibliotecas", "2. Parâmetros", ...).
+  stage_markdown_silver:
+    - "Header e metadados de destino"
+    - "Historico de atualizacoes"
+    - "Decisoes provisorias a revisar com o PO"   # condicional: só quando a Silver materializa regra sem ID canônico ainda
+    - "Spark Configs"
+    - "Import libraries and packages"
+    - "Parameters"
+    - "Helping functions"
+    - "Tables importing"        # inclui validar_contrato_origem antes de ler cada tabela
+    - "Tables transforming"
+    - "Data quality checks"     # gate obrigatório antes do write
+    - "Final table"
+    - "Write table"
+    - "Catalogacao"             # sempre depois do write (overwriteSchema descarta comentários anteriores)
+    - "Production checklist"
+  stage_markdown_gold:
+    - "Header e metadados de destino"
+    - "Historico de atualizacoes"
+    - "Decisoes provisorias a revisar com o PO"   # condicional
+    - "Spark Configs"
+    - "Import libraries and packages"
+    - "Parameters"
+    - "Helping functions"
+    - "Silver tables importing"
+    - "Joins entre Silvers"     # condicional: omitir quando houver só 1 Silver de origem
+    - "Business rules e agregacao"
+    - "Data quality checks"     # inclui check de multiplicação de linhas por join
+    - "Final table"
+    - "Write table"
+    - "Catalogacao"
+    - "Production checklist"
+  final_status_prints:
+    - ambiente
+    - origem
+    - destino
+    - load_method
+    - linhas_origem
+    - linhas_destino
+    - ids_nulos
+    - ids_duplicados
+
+# ────────────────────────────────────────────────────────────────────────────
+# Regras default — flags booleanas curtas, cada uma documentada com o motivo.
+# Comentário com "(Fabric)" / "(Databricks)" = só relevante quando cloud está nesse valor;
+# sem tag = aplica nos dois clouds.
+# ────────────────────────────────────────────────────────────────────────────
+rules:
+  # --- Linguagem / estilo de transformação ---
+  spark_sql_first: true                        # lógica de transformação em spark.sql (cadeia de temp views, sem CTE); plumbing em PySpark
+  transformation_sql_plumbing_python: true      # parâmetros, watermark, escrita Delta ficam em Python/DataFrame API, nunca em SQL
+  no_cte_use_temp_views_only: true              # nunca WITH ... AS (...) dentro de um spark.sql; cada etapa é uma temp view própria
+  one_tempview_per_cell: true                   # nunca duas createOrReplaceTempView na mesma célula de código
+  markdown_before_each_tempview: true           # célula Markdown (título = nome da view, corpo = o que ela contém) imediatamente antes de cada célula que cria uma temp view
+  tempview_step_wrapped_in_function: true       # cada etapa é gera_tabela_<TABELA>() (leitura de origem) ou gera_view_<nome>() (demais etapas), chamada na mesma célula
+  tempview_one_line_comment: true               # além da célula MD, toda createOrReplaceTempView tem acima um comentário de 1 linha no próprio código
+  tempview_subsection_when_multiple: true       # (Databricks) etapa com 2+ temp views quebra em subseções "N.M TempView: <nome>" com comentário de até 4 linhas cada
+
+  # --- Convenções de nomenclatura de coluna/tabela ---
+  ids_as_string: true                           # ex.: CAST(DonorId AS STRING) AS id_doador — nunca ID numérico cru
+  id_fields_prefixed_with_origem_db: false      # true quando há múltiplas fontes e o ID precisa de prefixo por origem (CONCAT(id_origem_db, ...)); false quando a fonte é única
+  snake_case_typed_prefixes: true               # id_*, dt_*, fl_*, codigo_*, valor_* + colunas de rótulo decodificado
+  no_dim_fact_prefix_silver: true               # Silver nomeada pela entidade (cad_cliente, pedidos, historico_cliente), sem prefixo dim_/fato_
+  no_pa_prefix_gold: true                       # Gold nomeada pelo produto analítico, sem prefixo técnico redundante
+  dimensions_live_in_silver: true               # não criar dimensão redundante na Gold; o BI liga Gold à dimensão Silver
+  bronze_gold_filename_enforced: true           # (Databricks) nome físico do .ipynb de Bronze/Gold é obrigatório e sem exceção — ver notebook_layout.folder_pattern
+  avoid_numeric_folder_jumps: true              # (Databricks) numeração de pasta/produto sem buracos não-documentados
+
+  # --- Modelagem / carga ---
+  trim_by_default: false                        # não aplicar TRIM em toda coluna string por padrão — só onde o contrato pedir
+  select_star_final: false                      # tabela final nunca é SELECT * — colunas explícitas sempre
+  explicit_dedup_only: true                     # dedup é etapa explícita com ROW_NUMBER(), chave e desempate documentados — nunca implícito
+  add_data_processamento: true                  # data_processamento = F.current_timestamp() em toda Silver/Gold
+  load_method_from_metadata_csv: true           # (Fabric) MERGE | FULL | APPEND vem da linha do CSV de orquestração, não inventado no notebook
+  gold_default_modeling: one_big_table          # (Databricks) default por produto: tabela plana agregada; alternativa (fato/dimensão) só mediante análise de contexto, nunca automático
+  drop_table_full_load_default: false           # (Databricks) FULL load não faz DROP TABLE por padrão (overwrite de partição/schema controlado)
+  display_as_validation: false                  # (Databricks) .display() não é considerado validação — validação é assert/raise explícito
+
+  # --- Watermark / incremental ---
+  watermark_recompute_from_destination: true    # (Fabric) MERGE+watermark: recalcular o watermark efetivo a partir do maior valor já processado no destino
+  watermark_null_eligible: true                 # (Fabric) coluna de watermark nula conta como elegível, nunca excluída silenciosamente
+  timezone_dual_mode: true                      # (Fabric) DST-aware para cadastro/histórico; offset fixo para colunas operacionais de alta frequência — nunca unificar os dois modos
+
+  # --- Qualidade de dados ---
+  join_row_multiplication_check: true           # Gold: validar contagem antes/depois de cada join contra a cardinalidade esperada
+  unhandled_case_explicit: true                 # de-para/classificação/dedup declara o que faz com valor fora do domínio; falha visível antes de default silencioso
+  quality_gate_hard_raise: true                 # (Fabric) etapa "Data quality checks" levanta erro antes do write (validações mínimas + checks do notebook)
+  dq_metrics_single_query: true                 # (Fabric) contadores de qualidade reunidos em uma query com subqueries correlacionadas, não um .filter().count() por checagem
+  uc_table_and_column_comments: true            # (Databricks) obrigatório nas 3 camadas: COMMENT ON TABLE + ALTER COLUMN COMMENT por coluna
+  business_rule_provenance: true                # (Databricks) toda regra registra origem e estado de evidência (ata, protótipo, cliente)
+
+  # --- Catalogação ---
+  catalog_stage_after_write: true               # catalogação roda depois do write (overwriteSchema descarta comentários anteriores)
+  catalog_stage_never_raises: true               # falta de privilégio no catálogo não pode reverter uma carga já gravada
+  catalog_stage_conditional_trigger: full_load_or_forced   # (Databricks) roda se carga=FULL ou widget "forçar comentários"=Sim; camadas sem esse widget continuam incondicionais
+
+  # --- Import / notebook como artefato ---
+  preserve_ipynb_source_format: true             # editar .ipynb por script preserva o formato do source da célula (list ou str)
+  import_safe_ipynb_cleanup: true                # (Fabric) antes de reimportar: UTF-8 sem BOM, source como lista, outputs limpos
+  no_databricks_only_features: true              # (Fabric) sem dbutils, DBFS, widgets, Unity Catalog (salvo pedido explícito)
+  notebook_no_internal_artifact_refs: true       # notebook nunca cita CLAUDE.md, skills, prompts ou Issues internas por nome
+  notebook_text_no_accents: true                 # código/comentário/Markdown do notebook sem acento (import-safe); docs de negócio em `@client_context/` mantêm acento
+  source_contract_check_runtime: true            # contrato da origem (tabela existe + colunas esperadas) validado a cada execução, não só na construção
+  provisional_decisions_cell: conditional        # célula "Decisões provisórias a revisar com o PO" quando a tabela materializa regra ainda sem ID canônico em 00_regras-negocio.md
+  ask_markdown_documentation_depth: true         # (Databricks) pergunta por notebook, não por regra fixa: confirmar com o usuário se as células levam documentação operacional
+  pandas_iterrows_default: false                 # (Databricks) iteração linha-a-linha em pandas não é o padrão — preferir vetorização/Spark
+
+# ────────────────────────────────────────────────────────────────────────────
+# Parâmetros canônicos — nomes usados na célula tags:["parameters"] / nos widgets de execução
+# ────────────────────────────────────────────────────────────────────────────
+parameters:
+  # Fabric — célula parameters (papermill-style)
+  fabric:
+    env: ENV
+    is_active: IS_ACTIVE
+    domain: DOMAIN
+    owner: OWNER
+    subdomain: SUBDOMAIN
+    business_entity: BUSINESS_ENTITY
+    ddd_type: DDD_TYPE
+    source_system: SOURCE_SYSTEM
+    lakehouse: LAKEHOUSE
+    source_schema: SOURCE_SCHEMA
+    silver_schema: SILVER_SCHEMA
+    gold_schema: GOLD_SCHEMA
+    target_schema: TARGET_SCHEMA
+    target_table: TARGET_TABLE
+    primary_key: PRIMARY_KEY
+    load_method: LOAD_METHOD
+    timezone: TIMEZONE
+    watermark_enabled: WATERMARK_ENABLED
+    watermark_column: WATERMARK_COLUMN
+    watermark_start_value: WATERMARK_START_VALUE
+    watermark_lookback_days: WATERMARK_LOOKBACK_DAYS
+  # Databricks — dbutils.widgets (Silver/Gold); Bronze costuma manter variável Python fixa
+  databricks:
+    source_schema: SOURCE_SCHEMA
+    source_table: SOURCE_TABLE
+    destination_schema: DESTINATION_SCHEMA
+    destination_table: DESTINATION_TABLE
+    load_type: LOAD_TYPE
+    partitioned_by_field: PARTITIONED_BY_FIELD
+
+# ────────────────────────────────────────────────────────────────────────────
+# Overlay Fabric — só preencher/usar quando cloud: fabric
+# ────────────────────────────────────────────────────────────────────────────
+fabric:
+  platform:
+    runtime: Microsoft Fabric Spark Notebook
+    lakehouse: "{{LAKEHOUSE}}"
+    # Se a Bronze for um mirrored database (aponta para o sistema de origem via mirroring nativo),
+    # não existe camada Bronze física com notebook de ingestão — não criar uma por padrão.
+    bronze_is_mirrored: true
+
+  catalog:
+    lakehouse: "{{LAKEHOUSE}}"
+    source_schema: "bronze_{{SISTEMA_ORIGEM}}"       # mirror do sistema de origem; usar como SOURCE_SCHEMA, sem schema aninhado
+    silver_schema: "silver_corporativo"              # organizar por domínio (cadastro, processo/operação, etc.)
+    gold_schema: "gold_corporativo"                  # apenas produtos analíticos para consumo no BI
+
+  orchestration_csv:
+    path: "{{tech_sync}}/metadata_driven/metadata_driven_orchestration.csv"
+    delimiter: ";"                          # ponto e vírgula, NUNCA vírgula
+    list_separator: "|"                     # colunas de lista (source_system, primary_key), texto puro sem aspas/colchetes
+    # Ordem exata das colunas. notebook_id é a última e pode ficar em branco até publicar no Fabric.
+    columns:
+      - is_active
+      - execution_order
+      - layer
+      - domain
+      - subdomain
+      - ddd_type
+      - business_entity
+      - notebook_name
+      - owner
+      - source_system
+      - business_definition
+      - primary_key
+      - target_schema
+      - target_table
+      - load_method
+      - watermark_enabled
+      - watermark_column
+      - watermark_start_value
+      - watermark_lookback_days
+      - env
+      - timeout_minutes
+      - retry_count
+      - notebook_id
+    append_row_on_new_notebook: true        # todo notebook novo anexa sua linha de metadados ao CSV
+
+  source_systems:
+    "{{SISTEMA_ORIGEM}}":
+      kind: mirrored_database
+      mirror_schema: "bronze_{{SISTEMA_ORIGEM}}"
+      # Se houver fonte única (mirror 1:1), não prefixar ID com código de origem — ver
+      # rules.id_fields_prefixed_with_origem_db: false. Se houver mais de uma fonte, trocar
+      # kind conforme o caso e ligar o prefixo por origem.
+
+  spark_configs:
+    # Leitura Parquet legada (datas históricas/INT96 de sistemas de origem antigos) + Adaptive Query Execution.
+    - "spark.sql.parquet.datetimeRebaseModeInRead = LEGACY"
+    - "spark.sql.parquet.int96RebaseModeInRead = LEGACY"
+    - "spark.sql.adaptive.enabled = true"
+    - "spark.sql.adaptive.coalescePartitions.enabled = true"
+    - "spark.sql.adaptive.skewJoin.enabled = true"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Overlay Databricks — só preencher/usar quando cloud: databricks
+# ────────────────────────────────────────────────────────────────────────────
+databricks:
+  execution_widgets:
+    # Parâmetros de execução via dbutils.widgets.dropdown — tipicamente só Silver/Gold; Bronze
+    # pode manter variável Python fixa (AMBIENTE = "DEV" / "#AMBIENTE = \"PRD\"") até decisão de
+    # padronizar também essa camada.
+    applies_to: [silver, gold]
+    widgets:
+      - name: ambiente
+        type: dropdown
+        choices: [DEV, PRD]
+        default: DEV
+        label: "Ambiente"
+      - name: catalogo
+        type: dropdown
+        choices: ["{{CATALOGO_DEV}}", "{{CATALOGO_PRD}}"]
+        default: "{{CATALOGO_DEV}}"
+        label: "Catálogo"
+        cross_validate_against: ambiente   # raise se catalogo != CONFIG[ambiente]["CATALOG"]
+      - name: tipo_carga
+        type: dropdown
+        choices: [FULL, INCREMENTAL]
+        default: FULL   # decisão vigente para carga inicial; mudar o default exige confirmação do usuário
+        label: "Tipo de Carga"
+      - name: forcar_comentarios
+        type: dropdown
+        choices: [Sim, "Não"]
+        default: "Não"
+        label: "Forçar Comentários"
+        purpose: evita ALTER TABLE ... COMMENT redundante numa carga incremental sem mudança de schema
+
+  connection:
+    library_run_path: "{{DATABRICKS_LIBS_PATH}}"      # ex.: pasta compartilhada de libs de ingestão padrão do workspace
+    default_environment: DEV
+    catalogs:
+      DEV: "{{CATALOGO_DEV}}"
+      PRD: "{{CATALOGO_PRD}}"
+    storage_accounts:
+      DEV: "{{STORAGE_ACCOUNT_DEV}}"
+      PRD: "{{STORAGE_ACCOUNT_PRD}}"
+
+  schemas:
+    bronze_pattern: "bronze_<origem>_<ambiente>"
+    silver_allowed:
+      - silver_comercial
+      - silver_cadastros
+      - silver_backoffice
+      - silver_engenharia
+    gold_pattern: "gold_<unidade_negocio>"
+
+  # Exemplo ilustrativo — cada Bronze ganha um id_origem_db numérico curto, usado no prefixo do
+  # ID quando rules.id_fields_prefixed_with_origem_db: true (cenário multi-origem).
+  source_systems:
+    "{{SISTEMA_ORIGEM_1}}":
+      id_origem_db: "3000"
+      origem_db: "{{SISTEMA_ORIGEM_1}}"        # ex.: ERP principal
+    "{{SISTEMA_ORIGEM_2}}":
+      id_origem_db: "4000"
+      origem_db: "{{SISTEMA_ORIGEM_2}}"        # ex.: CRM setorial
+    "{{SISTEMA_ORIGEM_3}}":
+      id_origem_db: "5000"
+      origem_db: "{{SISTEMA_ORIGEM_3}}"        # ex.: API de parceiro externo (sandbox/produção pela base URL do secret)
+
+  # Ingestão via API (Bronze não-mirrored) — só se aplica quando a origem não tem mirroring nativo.
+  api_ingestion:
+    use_secret_manager: true
+    separate_authentication_function: true
+    pagination_fields:
+      - pagina
+      - registros_por_pagina
+    max_registros_por_pagina: 500
+    pagination_stop_criteria: total_de_paginas_ou_pagina_vazia
+    safety_max_pages: 5000
+    optional_incremental_cutoff: true
+    incremental_requires_silver_dedup: true
+    incremental_lookback_default: "1 day"
+    forced_full_flag: FORCAR_FULL
+    forced_full_default: true                  # toda Bronze nasce e permanece em True; trocar exige confirmação do usuário
+    preserve_raw_payload_in_bronze: true
+    raw_audit_table_suffix: "_raw"
+    raw_write_flag: GRAVAR_RAW
+    raw_write_default: false                   # default conservador: df_raw é montado, nada é persistido, até decisão explícita de religar
+    # Rate limit — exemplo ilustrativo; substituir pelos limites reais documentados pelo fornecedor
+    # da API ({{API_VENDOR}}). Nunca herdar estes números sem checar a doc do fornecedor do projeto.
+    rate_limit:
+      request_helper: "requisitar_api_{{API_VENDOR}}"
+      no_direct_requests_get: true             # nenhum requests.get fora do helper
+      requests_per_minute: 60                  # placeholder — ajustar ao limite real do fornecedor
+      min_interval_seconds: 1.0                # placeholder — ajustar ao limite real do fornecedor
+      interval_measured_from: request_start    # a maioria das APIs conta pela chegada da requisição, não pelo fim da resposta
+      max_attempts_per_request: 4
+      retry_429_wait_header: null              # nome do header de retry, se o fornecedor expuser um (ex.: X-Rate-Limit-Reset); senão usar Retry-After
+      retry_5xx_backoff_seconds: [5, 15, 45]
+      retry_other_4xx: false
+      parallel_calls_same_credential: false
+
+# ────────────────────────────────────────────────────────────────────────────
+# Helpers e convenção de etapas — nomes de função e tratamentos SQL reusados nos notebooks,
+# válidos nos dois clouds (o padrão de cadeia de temp views é o mesmo; só a plumbing muda).
+# ────────────────────────────────────────────────────────────────────────────
+helper_functions:
+  plumbing:
+    - nome_tabela
+    - ler_origem
+    - validar_contrato_origem              # contrato da origem (tabela existe + colunas esperadas); raise antes de ler; roda a cada execução
+    - adicionar_metadados_processamento
+    - aplicar_watermark
+    - calcular_watermark_efetivo
+    - validar_minimo
+    - gravar_full
+    - gravar_merge
+    - exibir_contagem
+  # Convenção de nome de cada etapa da cadeia de temp views (sem CTE): uma função por etapa, uma célula por função.
+  tempview_steps:
+    - "gera_tabela_<TABELA>"   # leitura de origem (mirror/Bronze/Silver), 1 por tabela
+    - "gera_view_<nome>"       # toda outra etapa: tratada, derivada, join, dedup, pivot-latest, associação
+    - "gera_tabela_final"      # exceção: última etapa, retorna DataFrame em vez de registrar view
+  # Tratamentos: expressões SQL canônicas reusadas em cada SELECT que produz uma temp view.
+  treatments:
+    - tratar_inteiro          # CAST(col AS INT)
+    - tratar_booleano         # CAST(col AS BOOLEAN)
+    - tratar_timestamp        # parse com guardas de data inválida
+    - tratar_timestamp_utc    # guardas + conversão de fuso horário (DST-aware ou offset fixo, conforme rules.timezone_dual_mode)

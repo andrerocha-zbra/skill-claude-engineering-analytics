@@ -1,0 +1,52 @@
+# .gitignore padrão para projeto de dados (renomear para .gitignore ao aplicar)
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python / notebooks
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
+.env
+*.env
+
+# Power BI (PBIP) — cache local e artefatos voláteis
+.pbi/
+*.pbix
+**/.pbi/localSettings.json
+**/*.SemanticModel/.pbi/
+**/*.Report/.pbi/
+
+# Databricks / Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Databricks Asset Bundle / CLI — estado local e artefatos de build (nunca versionar)
+.databricks/
+*.bundle/
+.bundle/
+
+# Microsoft Fabric — cache local do Git integration / VS Code extension
+.fabric/
+
+# Dados locais e temporários (não versionar dados)
+*.parquet
+*.csv.bak
+/tmp/
+_scratch/
+
+# Segredos / credenciais (NUNCA versionar)
+*.key
+*.pem
+secrets.*
+.databrickscfg
+
+# Backups
+backup/
+*_bckp/

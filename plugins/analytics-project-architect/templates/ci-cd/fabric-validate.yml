@@ -1,0 +1,53 @@
+# Template de CI/CD para Microsoft Fabric.
+# Copie para <repo-cliente>/.github/workflows/fabric-validate.yml.
+#
+# Fabric nao tem um "deploy via CLI" equivalente ao Databricks Asset Bundles: a
+# sincronizacao real acontece pelo proprio Git integration nativo do workspace
+# (ver references/08-cicd-fabric-databricks.md). Este workflow so faz o gate de
+# qualidade ANTES do merge, para nunca deixar chegar ao Fabric um notebook com
+# JSON invalido ou erro de sintaxe.
+
+name: Validar notebooks Fabric ({{CLIENTE}})
+
+on:
+  pull_request:
+    paths:
+      - "datalake/_tech-sync/**"
+
+jobs:
+  validar-notebooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar JSON + sintaxe Python de cada notebook
+        run: |
+          python3 -c "
+          import glob, json, ast, sys
+          erro = False
+          for caminho in glob.glob('datalake/_tech-sync/**/*.ipynb', recursive=True):
+              try:
+                  with open(caminho, encoding='utf-8') as f:
+                      nb = json.load(f)
+              except json.JSONDecodeError as e:
+                  print(f'{caminho}: JSON invalido: {e}')
+                  erro = True
+                  continue
+              for i, cell in enumerate(nb.get('cells', [])):
+                  if cell.get('cell_type') != 'code':
+                      continue
+                  fonte = cell.get('source', '')
+                  codigo = ''.join(fonte) if isinstance(fonte, list) else fonte
+                  try:
+                      ast.parse(codigo)
+                  except SyntaxError as e:
+                      print(f'{caminho} celula {i}: {e}')
+                      erro = True
+          sys.exit(1 if erro else 0)
+          "
+
+      - name: Checar metadata_driven_orchestration.csv
+        run: |
+          test -f datalake/_tech-sync/metadata_driven/metadata_driven_orchestration.csv \
+            && echo "CSV de orquestracao presente." \
+            || echo "Aviso: CSV de orquestracao nao encontrado (ok se o projeto nao usa orquestracao metadata-driven)."

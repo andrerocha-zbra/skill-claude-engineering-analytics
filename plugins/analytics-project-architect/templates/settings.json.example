@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bloquear_tmdl.py\"",
+            "timeout": 20,
+            "statusMessage": "Conferindo se e edicao direta de .tmdl..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guardar_comando_destrutivo.py\"",
+            "timeout": 20,
+            "statusMessage": "Conferindo comando destrutivo..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/validar_notebook.py\" || true",
+            "timeout": 20,
+            "statusMessage": "Validando notebook (.ipynb)..."
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/lembrete_orquestracao.py\" || true",
+            "timeout": 20,
+            "statusMessage": "Checando se e Silver/Gold..."
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/lembrete_log_vivo.py\" || true",
+            "timeout": 20,
+            "statusMessage": "Checando checkpoint de entrega..."
+          }
+        ]
+      }
+    ]
+  }
+}

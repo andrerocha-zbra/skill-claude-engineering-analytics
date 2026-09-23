@@ -1,0 +1,15 @@
+# Harness repo — não é um repo de cliente (ver templates/gitignore.txt para o gitignore de repo-cérebro)
+
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.tmp
+.vscode/
+*.code-workspace.bak
+
+# Duplicata local pendente de remocao manual (sources/ foi copiado para _research/casos-fonte/)
+/sources/
+
+# Arquivos de lock de editores (LibreOffice/Word)
+**/.~lock.*#
