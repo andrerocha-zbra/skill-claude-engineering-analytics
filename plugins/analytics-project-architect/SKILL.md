@@ -33,6 +33,10 @@ Princípio de token: **não leia references/ que a fase atual não precisa.** Es
 6. **Log vivo, sempre.** Atualizar `PROJETO.md` automaticamente (ver "Log vivo"); o hook `lembrete_log_vivo.py` avisa nos pontos de checkpoint. Rotacionar com `scripts/rotacionar_log.py` quando crescer demais.
 7. **Client-agnóstica e empresa-agnóstica.** Specifics do cliente (schemas, regras, lakehouse) moram em `@client_context/` do projeto. Specifics da consultoria (marca, voz) moram em `company-profiles/`. Nunca hardcoded neste plugin.
 8. **Guardrails em código, não só em prompt.** Regra que, se ignorada, resulta em dado errado ou artefato corrompido vira hook (`references/07`) ou quality gate (`references/03-datalake-core.md`) — não fica só escrita em `CLAUDE.md`.
+9. **Skill vendorizada no repositório do cliente.** O scaffold copia esta skill inteira para `.claude/skills/analytics-project-architect/` de cada projeto novo — reprodutível por qualquer pessoa que clone o repo, mesmo sem o plugin instalado. Correção nasce na fábrica (este plugin) e se propaga deliberadamente via `scripts/atualizar_skill_vendorizada.py --confirmar`, nunca silenciosamente (`references/10`).
+10. **Roteiro por tipo de entrega, não instrução repetida.** Toda entrega recorrente (Silver, Gold, documentar produto) tem um roteiro pronto pra colar em `prompts/`, escaffoldado por padrão — o pedido vira uma linha, o roteiro carrega o resto.
+11. **O cérebro não vaza para o entregável.** Notebook, relatório, medida ou comentário nunca cita por nome `CLAUDE.md`, `PROJETO.md`, a skill, um hook ou `tasks/` — o entregável descreve o fato em si, não o processo interno que levou a ele.
+12. **Pendência é artefato que se move, não que some.** Problema resolvido nunca é apagado — vai para `problemas/resolvido/` com data e o que mudou no topo. Resolver sem mover deixa o repositório mentindo sobre o que está em aberto.
 
 ---
 
@@ -55,7 +59,7 @@ Perguntar o mínimo (`AskUserQuestion`) e então montar a estrutura:
 4. **Domínios/produtos** iniciais (ex.: doadores, doações).
 5. **Há material de origem?** (Ata, protótipo, modelo existente) → alimenta Fase 0.
 
-Depois: rodar `scripts/scaffold_cliente.py` (cria a árvore completa, `git init`, `.claude/settings.json` com os hooks já wired, `_tech-sync/` já com o esqueleto certo pra nuvem escolhida, workflow de CI/CD), inicializar `PROJETO.md` a partir de `templates/PROJETO.md` (registrando a versão da skill usada), e registrar a primeira entrada de log.
+Depois: rodar `scripts/scaffold_cliente.py` (cria a árvore completa, `git init`, `.claude/settings.json` com os hooks já wired, `_tech-sync/` já com o esqueleto certo pra nuvem escolhida, workflow de CI/CD, **vendoriza esta skill inteira** em `.claude/skills/analytics-project-architect/`, copia os roteiros por camada para `prompts/` e o `.mcp.json` — fabric + powerbi-modeling-mcp — para a raiz do projeto), inicializar `PROJETO.md` a partir de `templates/PROJETO.md` (registrando a versão da skill vendorizada), e registrar a primeira entrada de log.
 
 ---
 
@@ -65,9 +69,12 @@ Eixo **tecnologia-first**, pastas de topo nomeadas pelo conteúdo, sem prefixo n
 
 ```
 <cliente>-brain/
-  PROJETO.md                 # log vivo + manifesto (versão do harness pinada aqui)
+  PROJETO.md                 # log vivo + manifesto (versão da skill vendorizada pinada aqui)
   AGENTS.md / CLAUDE.md      # bootstrap fino
   .claude/settings.json      # hooks já wired
+  .claude/skills/analytics-project-architect/  # skill vendorizada — reproduzível sem o plugin instalado (references/10)
+  .mcp.json                  # MCPs fabric (HTTP+OAuth) e powerbi-modeling-mcp (stdio)
+  prompts/                    # roteiros por camada, prontos pra colar (criar_silver.md, criar_gold.md, documentar_produto.md)
   @client_context/           # conhecimento de negócio do cliente: regras, catálogo, design-system, fontes externas
   apresentacoes/             # decks e entregas ao cliente
   reunioes/DD-MM-AA__titulo/ # materiais/ · ata.md · specs/
@@ -76,7 +83,7 @@ Eixo **tecnologia-first**, pastas de topo nomeadas pelo conteúdo, sem prefixo n
     _tech-sync/              # ⬅ única pasta conectada ao Fabric Git integration / Databricks Git folder
     documentacao/            # espelha as entidades de _tech-sync/, fora dela, nunca sincroniza
   ml/<modelo>/                # notebooks · cartao-modelo.md · experimentos/
-  tasks/                      # único, top-level — TASK-NNN__slug/
+  tasks/                      # único, top-level — tempo-de-trabalho.md · TASK-NNN__slug/
   historico/                  # snapshots congelados, nunca editados
   backup/
 ```
@@ -118,10 +125,11 @@ Pastas de topo nomeadas pelo conteúdo, sem prefixo numérico; nova tecnologia =
 | Modelagem + medidas **DAX** (via Power BI MCP) | `references/04-powerbi-modelagem-dax.md` |
 | Visuais customizados **HTML/CSS/SVG/JS via DAX** | `references/05-powerbi-frontend.md` |
 | **Documentar** um projeto Power BI (PBIP) de forma econômica + handoff | `references/06-doc-e-handoff.md` |
-| **Mecanismos e hooks**: M1-M3 + os hooks reais de `.claude/settings.json` | `references/07-mecanismos-e-hooks.md` |
+| **Mecanismos e hooks**: M1-M4 + os hooks reais de `.claude/settings.json` | `references/07-mecanismos-e-hooks.md` |
 | **CI/CD**: conectar `_tech-sync/` ao Fabric/Databricks, pipelines | `references/08-cicd-fabric-databricks.md` |
 | **Refatorar um projeto existente** para a estrutura padrão | `references/09-refatorar-projeto-existente.md` |
-| Gerar notebook novo, limpar notebook pra reimportar, rodar scaffold, avaliar projeto existente, rotacionar log | `scripts/` (ver docstring de cada script) |
+| **Vendorizar/atualizar a skill** dentro de um projeto, MCPs `fabric`/`powerbi-modeling-mcp` | `references/10-vendorizacao-e-atualizacao.md` |
+| Gerar notebook novo, limpar notebook pra reimportar, rodar scaffold, avaliar projeto existente, rotacionar log, vendorizar/atualizar skill, detectar MCP local | `scripts/` (ver docstring de cada script) |
 
 Regra: abra **uma** reference por vez, conforme a fase. Não pré-carregue o conjunto.
 

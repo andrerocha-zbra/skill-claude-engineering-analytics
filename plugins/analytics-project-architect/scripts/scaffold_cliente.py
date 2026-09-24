@@ -4,15 +4,20 @@ Sucessor em Python do scaffold-projeto.example.ps1 (que so criava pastas). Alem 
 arvore de pastas por banda numerada, este script gera PROJETO.md/AGENTS.md/CLAUDE.md na
 raiz, o esqueleto de orquestracao de dados (CSV metadata-driven no Fabric, ou
 databricks.yml no Databricks), copia os hooks do plugin para .claude/hooks/ e escreve
-.claude/settings.json com eles ja wired, e roda `git init` (salvo --sem-git).
+.claude/settings.json com eles ja wired, vendoriza a skill inteira em
+.claude/skills/analytics-project-architect/ (ver references/10-vendorizacao-e-atualizacao.md),
+copia os roteiros por camada para prompts/, copia o .mcp.json do plugin (MCPs fabric e
+powerbi-modeling-mcp) para a raiz do projeto, e roda `git init` (salvo --sem-git).
 
 Client-agnostico: nada de nome de cliente/empresa hardcoded -- tudo vem de argumento.
 Idempotente e nao-destrutivo: nenhum arquivo existente e sobrescrito (nem com --forcar --
 --forcar so libera entrar numa pasta --destino que ja exista e nao esteja vazia).
 
-Templates aqui sao versoes minimas, para o script rodar sem depender de outros arquivos.
-Os templates completos (mais ricos) do plugin vivem em ../templates/ -- quem quiser usa-los
-na integra pode copia-los por cima depois (eles tambem nunca sao sobrescritos por engano).
+Templates de PROJETO.md/AGENTS.md/CLAUDE.md aqui sao versoes minimas, para o script rodar
+sem depender de outros arquivos alem de vendorizar_skill.py. Os templates completos (mais
+ricos) do plugin vivem em ../templates/ e sao vendorizados junto (ver acima) -- quem quiser
+usa-los na integra pode copia-los por cima depois (eles tambem nunca sao sobrescritos por
+engano).
 
 Uso:
     python scaffold_cliente.py --cliente "Nome Cliente" --cloud fabric \\
@@ -28,17 +33,25 @@ import unicodedata
 from datetime import date
 from pathlib import Path
 
+import vendorizar_skill
+
 TECNOLOGIAS_CONHECIDAS = {"powerbi", "datalake", "ml"}
+
+OVERLAY_POR_NUVEM = {
+    "fabric": "`references/03a-fabric-overlay.md`",
+    "databricks": "`references/03b-databricks-overlay.md`",
+}
 
 TEMPLATE_README_RARA = """# {pasta}/
 
-Pasta rara. A maior parte do conteudo tecnico (padroes, roteiros, scripts de scaffold)
-mora na skill instalada como plugin, nao em cada projeto -- isso evita duplicar a
-correcao de um padrao em varios clientes quando ele muda.
+Pasta rara. Skill generica de verdade especifica deste projeto -- nao confundir com a
+skill vendorizada em .claude/skills/analytics-project-architect/ (copia desta skill
+generica, mantida em sincronia com o plugin via scripts/atualizar_skill_vendorizada.py).
 
 Use esta pasta so quando surgir algo genuinamente especifico deste projeto, que nao faz
-sentido subir para a skill generica. Detalhe: references/01-estrutura-e-nomenclatura.md,
-secao "Pastas raras".
+sentido subir para a skill generica. Se usar, va em .claude/skills/<nome>/ (nao aqui) para
+o Claude Code carregar automaticamente. Detalhe:
+references/01-estrutura-e-nomenclatura.md, secao ".skills/ (raro)".
 """
 
 COLUNAS_CSV = [
@@ -139,7 +152,7 @@ def escrever_se_nao_existir(caminho: Path, conteudo: str) -> bool:
 # normal em portugues -- e documentacao final para humano, diferente do .ipynb gerado por
 # novo_notebook.py, que fica sem acento por exigencia de import-safe no Fabric.
 
-def template_projeto_md(cliente: str, cloud: str, tecnologias: list, dominios: list, hoje: str) -> str:
+def template_projeto_md(cliente: str, cloud: str, tecnologias: list, dominios: list, hoje: str, versao_skill: str) -> str:
     lista_tecnologias = ", ".join(tecnologias) if tecnologias else "TODO"
     lista_dominios = ", ".join(dominios) if dominios else "TODO"
     return f"""# Projeto -- {cliente}
@@ -155,6 +168,7 @@ def template_projeto_md(cliente: str, cloud: str, tecnologias: list, dominios: l
 - **Dominios/produtos:** {lista_dominios}
 - **Owner:** TODO
 - **Inicio:** {hoje}
+- **Skill vendorizada:** analytics-project-architect v{versao_skill} (`.claude/skills/analytics-project-architect/`) -- atualizar com `scripts/atualizar_skill_vendorizada.py`
 
 ## Estado por fase
 
@@ -273,9 +287,8 @@ negocio, catalogo de dados e decisoes tecnicas duraveis.
 def montar_estrutura(base: Path, cliente_slug: str, cloud: str, tecnologias: list, dominios: list) -> None:
     print("Arvore de pastas:")
 
-    for nome in (".skills", "prompts"):
-        criar_dir(base / nome)
-        escrever_se_nao_existir(base / nome / "README.md", TEMPLATE_README_RARA.format(pasta=nome))
+    criar_dir(base / ".skills")
+    escrever_se_nao_existir(base / ".skills" / "README.md", TEMPLATE_README_RARA.format(pasta=".skills"))
 
     for sub in ("processos", "design-system", "data/catalogos", "fontes-externas"):
         criar_dir(base / "@client_context" / sub)
@@ -321,6 +334,43 @@ def montar_estrutura(base: Path, cliente_slug: str, cloud: str, tecnologias: lis
     criar_dir(base / "tasks")
     criar_dir(base / "historico")
     criar_dir(base / "backup")
+
+
+def copiar_prompts(destino: Path, cliente: str, cloud: str) -> None:
+    """Copia os roteiros por camada de ../templates/prompts/ para <destino>/prompts/,
+    substituindo o placeholder {{OVERLAY_NUVEM}} pela reference certa para a nuvem escolhida."""
+    origem = Path(__file__).resolve().parent.parent / "templates" / "prompts"
+    print("Roteiros (prompts/):")
+    if not origem.is_dir():
+        print(f"  ! pasta de roteiros nao encontrada em {origem} -- pulei")
+        return
+
+    overlay = OVERLAY_POR_NUVEM.get(cloud, f"`references/03a-fabric-overlay.md` ou `references/03b-databricks-overlay.md`")
+    for arquivo in sorted(origem.glob("*.md")):
+        conteudo = arquivo.read_text(encoding="utf-8").replace("{{OVERLAY_NUVEM}}", overlay)
+        escrever_se_nao_existir(destino / "prompts" / arquivo.name, conteudo)
+
+
+def criar_tempo_de_trabalho(destino: Path, cliente: str) -> None:
+    origem = Path(__file__).resolve().parent.parent / "templates" / "tempo-de-trabalho.md"
+    if not origem.is_file():
+        criar_dir(destino / "tasks")
+        return
+    conteudo = origem.read_text(encoding="utf-8").replace("{{CLIENTE}}", cliente)
+    escrever_se_nao_existir(destino / "tasks" / "tempo-de-trabalho.md", conteudo)
+
+
+def copiar_mcp_config(destino: Path) -> None:
+    """Copia o .mcp.json do plugin (MCPs fabric + powerbi-modeling-mcp) para a raiz do
+    projeto -- ver references/07-mecanismos-e-hooks.md (M1, M4) para o que cada um faz."""
+    origem = Path(__file__).resolve().parent.parent / ".mcp.json"
+    print(".mcp.json:")
+    if not origem.is_file():
+        print(f"  ! .mcp.json nao encontrado em {origem} -- pulei")
+        return
+    if escrever_se_nao_existir(destino / ".mcp.json", origem.read_text(encoding="utf-8")):
+        print("  ! powerbi-modeling-mcp precisa de POWERBI_MODELING_MCP_PATH -- rode "
+              "scripts/detectar_powerbi_modeling_mcp.py uma vez nesta maquina.")
 
 
 # ------------------------------------------------------------------ hooks + settings.json
@@ -478,14 +528,17 @@ def main():
 
     cliente_slug = slug(args.cliente)
     hoje = date.today().strftime("%Y-%m-%d")
+    versao_skill = vendorizar_skill.ler_versao_plugin(vendorizar_skill.raiz_plugin())
 
     print(f"Scaffold '{args.cliente}' em: {base}  (cloud={args.cloud})\n")
     base.mkdir(parents=True, exist_ok=True)
 
     montar_estrutura(base, cliente_slug, args.cloud, tecnologias, dominios)
+    copiar_prompts(base, args.cliente, args.cloud)
+    criar_tempo_de_trabalho(base, args.cliente)
 
     print("Documentacao raiz:")
-    escrever_se_nao_existir(base / "PROJETO.md", template_projeto_md(args.cliente, args.cloud, tecnologias, dominios, hoje))
+    escrever_se_nao_existir(base / "PROJETO.md", template_projeto_md(args.cliente, args.cloud, tecnologias, dominios, hoje, versao_skill))
     escrever_se_nao_existir(base / "AGENTS.md", template_agents_md(args.cliente))
     pasta_empresa = detectar_pasta_empresa(args.empresa)
     preferencias_trabalho = carregar_preferencias_trabalho(pasta_empresa)
@@ -497,6 +550,13 @@ def main():
     hooks_wiring = copiar_hooks(base)
     print(".claude/settings.json:")
     escrever_se_nao_existir(base / ".claude" / "settings.json", json.dumps(montar_settings_json(hooks_wiring), indent=2, ensure_ascii=False) + "\n")
+
+    print("Skill vendorizada (.claude/skills/analytics-project-architect/):")
+    resumo_vendorizacao = vendorizar_skill.vendorizar(base)
+    total_vendorizado = len(resumo_vendorizacao.get("copiado", [])) + len(resumo_vendorizacao.get("atualizado", []))
+    print(f"  + {total_vendorizado} arquivo(s) vendorizado(s) (v{versao_skill})")
+
+    copiar_mcp_config(base)
 
     print("Git:")
     if args.sem_git:
@@ -515,8 +575,11 @@ def main():
     else:
         print("  2. Adicione a(s) banda(s) de tecnologia que faltarem quando o escopo crescer.")
     print("  3. Gere o primeiro notebook com novo_notebook.py, se o escopo incluir datalake.")
+    print("  4. Rode `python .claude/skills/analytics-project-architect/scripts/detectar_powerbi_modeling_mcp.py --projeto .` "
+          "uma vez nesta maquina, para o MCP powerbi-modeling-mcp funcionar (fabric autentica sozinho via OAuth no primeiro uso).")
+    print("  5. Roteiros prontos em prompts/ (criar_silver.md, criar_gold.md, documentar_produto.md) -- copie e cole ao pedir uma entrega recorrente.")
     if not hooks_wiring:
-        print("  4. Copie os hooks do plugin para .claude/hooks/ e rode este script de novo (ou edite .claude/settings.json manualmente).")
+        print("  6. Copie os hooks do plugin para .claude/hooks/ e rode este script de novo (ou edite .claude/settings.json manualmente).")
 
 
 if __name__ == "__main__":

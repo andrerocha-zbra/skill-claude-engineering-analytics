@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "fabric": {
+      "type": "http",
+      "url": "https://api.fabric.microsoft.com/v1/mcp/core",
+      "oauth": {
+        "clientId": "13634f4a-a091-4d95-b6d1-c9c03db71d17"
+      }
+    },
+    "powerbi-modeling-mcp": {
+      "type": "stdio",
+      "command": "${POWERBI_MODELING_MCP_PATH}",
+      "args": ["--start"],
+      "env": {}
+    }
+  }
+}

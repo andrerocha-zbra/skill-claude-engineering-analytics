@@ -16,6 +16,53 @@ Git integration do Fabric conecta um **workspace** a **uma pasta específica** d
 3. Promoção dev→prod: via **Fabric Deployment Pipelines** (nativo da plataforma, não scriptável por fora do produto) — não é um passo de CI custom.
 4. CI leve antes do merge: um workflow que só roda `scripts/limpar_notebook_import.py` (dry-check) + a mesma validação do hook `validar_notebook.py` (JSON válido + `ast.parse`) como gate de PR — pega notebook quebrado antes dele nunca chegar a sincronizar.
 
+**Antes de conectar, crie a hierarquia de pastas no workspace**: o Git integration só espelha subpastas do repo em Workspace Folders que já existam no Fabric — ele não as cria sozinho. Sem isso, todo item exportado cai solto na raiz da pasta git conectada, quebrando o layout `silver/<entidade>/`, `gold/<entidade>/` de `01-estrutura-e-nomenclatura.md`. Crie as pastas aninhadas no workspace (via portal ou `mcp__fabric__create_folder`) espelhando exatamente a árvore de `_tech-sync/` antes do primeiro Commit/Update.
+
+**Formato real do export (workspace → git) não é `.ipynb`, e o Git integration não aceita `.ipynb` de volta.** São dois pipelines de import diferentes, com requisitos diferentes, e é fácil confundir os dois:
+
+- **REST API / `mcp__fabric__create_item`** (`definition.format="ipynb"`) aceita o `.ipynb` original em base64 — mas só cria o item diretamente no workspace via API, **não** participa do Git integration.
+- **Git integration** ("Update from Git") só aceita o formato nativo como conteúdo principal de Notebook: `notebook-content.py` em percent-format. Tentar commitar um `notebook-content.ipynb` e mandar "Update from Git" falha com erro direto do backend: `System.ArgumentException: The file extension of notebook main content ID notebook-content.ipynb is not supported.`
+
+Cada item Notebook vira uma pasta `<Nome>.Notebook/` com `notebook-content.py` + um `.platform` ao lado (`gitIntegration/platformProperties`, `config.logicalId` como GUID). Estrutura validada do `.py`:
+
+```
+# Fabric notebook source
+
+# METADATA ********************
+
+# META {
+# META   "kernel_info": {"name": "synapse_pyspark"},
+# META   "dependencies": {
+# META     "lakehouse": {
+# META       "default_lakehouse": "<guid>",
+# META       "default_lakehouse_name": "<nome>",
+# META       "default_lakehouse_workspace_id": "<guid>",
+# META       "known_lakehouses": [{"id": "<guid>"}]
+# META     },
+# META     "environment": {}
+# META   }
+# META }
+
+# MARKDOWN ********************
+# <cada linha do markdown prefixada com "# ">
+
+# CELL ********************
+<codigo Python cru, sem prefixo>
+
+# PARAMETERS CELL ********************
+<no lugar de "# CELL" quando a celula tem metadata.tags contendo "parameters">
+```
+
+Cada bloco (`MARKDOWN`/`CELL`/`PARAMETERS CELL`) é separado por uma linha em branco antes e depois. Na maioria dos casos não há bloco `# METADATA` por célula (só o do topo, a nível de notebook) — variação observada sem causa identificada, sem impacto no import.
+
+Isso conflita de frente com a convenção "`.ipynb` import-safe" do núcleo. A convenção do projeto continua sendo manter o `.ipynb` como fonte de verdade (é nele que se edita e revisa) e tratar o `.py` do Fabric como artefato derivado — nunca editado à mão.
+
+**Popular o workspace a partir de `.ipynb` já existentes, em massa, via git**: não tente gerar o `.py` de conversão manualmente célula por célula, nem peça pro agente montar o payload base64 inline chamada a chamada — a API funciona bem para arquivos pequenos, mas o agente gerando o conteúdo como texto dentro da chamada de tool esbarra num teto de ~25-27 mil caracteres por chamada, bem antes do tamanho de notebook real de produção (testado até notebooks de ~300KB). O padrão validado é: converter com `scripts/converter_ipynb_fabric.py <notebook.ipynb> <pasta_saida> --nome <NB_X>` (gera `<NB_X>.Notebook/notebook-content.py` + `.platform`; roda em disco via Bash/Python, sem passar pelo limite de texto por chamada), validar contra pelo menos um exemplo real já commitado pelo próprio Fabric (diff byte a byte, ignorando só CRLF/LF) antes de confiar no lote inteiro, e então `git commit` + `push` + "Update from Git" no workspace. Ver as ressalvas de cobertura na docstring do script (células `raw`, metadata por célula, `dependencies.lakehouse` ausente na origem). Só use a API/`create_item` direta (com `definition.format="ipynb"`) para criar item pontual pequeno fora do fluxo Git — nunca como substituto do Git integration para popular o workspace em lote.
+
+Ver `07-mecanismos-e-hooks.md` (mecanismo M4) para as pegadinhas de assincronia do `create_item`.
+
+**Testar num workspace sandbox não isola o git.** O isolamento entre um workspace de teste e o de produção existe só no nível do workspace Fabric — se o sandbox aponta para a mesma pasta git da produção (mesmo repo, mesma pasta, ainda que branch diferente não resolva se o merge for para a mesma branch), qualquer Commit feito a partir do sandbox escreve ao lado do código real. Para testar reconexão de Git integration com segurança de verdade, aponte o sandbox para uma pasta ou repo descartável, nunca para a pasta git de produção.
+
 ## Databricks
 
 Git folders do Databricks (Repos) suportam **sparse checkout por "cone pattern"**: você lista explicitamente as subpastas a clonar. A própria Databricks recomenda isso para monorepos — sem sparse checkout, um repo grande pode estourar limites de memória/disco do Git folder e deixar as operações lentas.

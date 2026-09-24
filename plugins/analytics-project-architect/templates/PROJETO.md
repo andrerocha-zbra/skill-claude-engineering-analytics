@@ -10,6 +10,7 @@
 - **Domínios/produtos:** {{doadores, doacoes, ...}}
 - **Owner:** {{NOME}}
 - **Início:** {{AAAA-MM-DD}}
+- **Skill vendorizada:** analytics-project-architect v{{VERSAO}} (`.claude/skills/analytics-project-architect/`) — atualizar com `scripts/atualizar_skill_vendorizada.py`
 
 ## Escopo
 

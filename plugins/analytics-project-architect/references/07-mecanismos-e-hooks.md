@@ -14,12 +14,12 @@ Hooks não têm juízo: eles detectam "isto é um `.ipynb`" ou "isto é um coman
 
 Duas categorias de automação:
 
-- **Mecanismos (M1-M3)**: playbooks que o próprio agente segue manualmente quando uma ferramenta externa tem uma limitação que não dá pra contornar por hook (ex.: um servidor MCP que exige confirmação interativa humana). Continuam sendo prosa que o agente segue, mas cada um tem um motivo técnico concreto documentado abaixo.
+- **Mecanismos (M1-M4)**: playbooks que o próprio agente segue manualmente quando uma ferramenta externa tem uma limitação que não dá pra contornar por hook (ex.: um servidor MCP que exige confirmação interativa humana). Continuam sendo prosa que o agente segue, mas cada um tem um motivo técnico concreto documentado abaixo.
 - **Hooks**: automação real, declarada em `.claude/settings.json`, que roda sem depender do agente lembrar. É o que faz regras como "nunca editar TMDL na mão" ou "sempre atualizar o `PROJETO.md`" valerem sempre, em vez de existirem só como frase em `CLAUDE.md`.
 
 ---
 
-## Mecanismos (M1-M3)
+## Mecanismos (M1-M4)
 
 ### M1 — Aplicar mudanças no modelo semântico via MCP
 
@@ -31,6 +31,7 @@ Consequência prática:
 - O agente não dirige essa janela interativa — só **prepara um prompt determinístico** (ex.: `run1_criar_medida.txt`) com os passos e JSON exatos a executar: conectar na instância local aberta → operações CRUD na ordem certa → validar por leitura + `dax_query` de sanity-check.
 - DAX longo vai num arquivo `.dax` separado (evita problema de escaping ao colar no CLI).
 - Pré-requisito: a ferramenta desktop do modelo (ex.: Power BI Desktop) precisa estar aberta com o projeto carregado.
+- `powerbi-modeling-mcp` já vem bundled no `.mcp.json` deste plugin/skill vendorizada, mas o executável local (extensão VS Code `analysis-services.powerbi-modeling-mcp`) é específico da máquina — rode `scripts/detectar_powerbi_modeling_mcp.py` uma vez por máquina para resolver `POWERBI_MODELING_MCP_PATH` (`references/10-vendorizacao-e-atualizacao.md`). O MCP `fabric` (HTTP+OAuth) não precisa desse passo.
 
 ### M2 — Import de notebook editado fora da plataforma
 
@@ -46,6 +47,15 @@ Checklist antes de fechar qualquer fase:
 - Nenhuma data no futuro.
 - Ordem de grandeza confere com o material de origem (Ata/requisito) — divergência grande é **insight a investigar**, não necessariamente bug.
 - Pós-rename/retipagem: checar downstream (medidas, visuais, notebooks consumidores) antes de considerar fechado.
+
+### M4 — Criação/leitura de itens no Fabric via MCP é assíncrona sem tool de polling
+
+Fato técnico observado no MCP `mcp__fabric__*`: `get_item_definition` retorna sempre uma operação pendente (corpo `null`, `Retry-After: 20`, `operation-id` novo a cada chamada) e não existe tool de polling exposto — na prática, ler a definição de um item por esse MCP não funciona hoje. `create_item` também responde de forma assíncrona (o retorno da própria chamada pode vir vazio/`null`) mas a criação **completa no servidor**.
+
+Consequência prática:
+- Não trate o retorno vazio de `create_item` como falha. Espere ~15-20s e confirme via `mcp__fabric__list_items` (ou `get_item`) — nunca confie no corpo de retorno da própria chamada assíncrona.
+- Se ainda assim usar `create_item` para N itens (ex.: itens pequenos fora do fluxo Git — ver `08-cicd-fabric-databricks.md`), desenhe o loop para ser **idempotente e retomável**: antes de criar, cheque se o item já existe (por nome, via `list_items`); se um subagente ou processo em background for interrompido no meio (limite de tempo/turnos é um cenário real, não hipotético), a retomada deve pular o que já foi criado em vez de assumir uma execução linear sem interrupção.
+- **Teto real de escala do `create_item` com payload gerado inline**: pedir para o próprio agente montar o base64 do conteúdo dentro da chamada de tool esbarra num limite de ~25-27 mil caracteres de texto gerado por chamada — trava antes de valer a pena para notebooks reais de produção (um notebook de ~300KB nem chega perto de caber). Para popular o workspace em massa a partir de `.ipynb` existentes, não é caso de uso do `create_item` via agente: use o caminho Git (script de conversão determinístico + commit/push + "Update from Git" descrito em `08-cicd-fabric-databricks.md`), que roda em disco via Bash/Python sem esse teto.
 
 ---
 

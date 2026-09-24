@@ -7,9 +7,12 @@
 ├── PROJETO.md                       # log vivo + manifesto
 ├── AGENTS.md / CLAUDE.md            # bootstrap
 ├── .claude/settings.json            # hooks
+├── .claude/skills/analytics-project-architect/  # skill vendorizada (ver "Vendorizacao da skill" abaixo)
 │
-├── .skills/                         # raro -- skill especifica deste projeto (ver secao "Pastas raras")
-├── prompts/                         # raro -- roteiro especifico deste projeto (ver secao "Pastas raras")
+├── prompts/                          # roteiros por camada, escaffoldados por padrao -- ver "Vendorizacao da skill"
+│   ├── criar_silver.md
+│   ├── criar_gold.md
+│   └── documentar_produto.md
 │
 ├── @client_context/                 # conhecimento de negocio do cliente
 │   ├── README.md                    # regra de evidencia, contratos de ID, navegabilidade
@@ -70,7 +73,7 @@
 │       └── experimentos/
 │
 ├── tasks/                           # unico, top-level
-│   ├── tempo-de-trabalho.md         # registro acumulado, uma secao por task
+│   ├── tempo-de-trabalho.md         # registro acumulado, uma secao por task -- ver templates/tempo-de-trabalho.md
 │   └── TASK-NNN__<slug>/
 │       ├── descricao-tarefa.md      # ver templates/task/descricao-tarefa.md
 │       └── fontes/                  # insumos recebidos, como chegaram
@@ -105,9 +108,17 @@ Quando um notebook é substituído por uma versão nova com desenho diferente, a
 - Regra transversal a vários domínios → vai para `@client_context/`, nunca duplicada em cada domínio.
 - Projeto de 1 produto só pode enxugar a subpasta de domínio (ex.: `powerbi/` sem subpasta extra, se só existe um domínio); projeto com N domínios simultâneos mantém a árvore cheia, com `PROJETO.md` rastreando o estado de cada frente.
 
-## Pastas raras: `.skills/` e `prompts/`
+## Vendorização da skill: `.claude/skills/analytics-project-architect/`
 
-A maior parte do conteúdo técnico — padrões, roteiros, scripts de scaffold — mora na skill instalada como plugin, não em cada repositório de projeto; isso evita duplicar a correção de um padrão em N clientes quando ele muda. `.skills/` e `prompts/` existem no projeto só para o caso raro de um roteiro ou uma skill genuinamente específica deste cliente, que não faz sentido subir para a skill genérica. Ficam vazias por padrão, com um `README.md` de uma linha explicando isso — usadas só quando surgir a necessidade real.
+`scaffold_cliente.py` copia esta skill inteira (`SKILL.md` + `references/` + `templates/` + `scripts/`) para dentro do projeto, em `.claude/skills/analytics-project-architect/` — é o caminho que o Claude Code carrega automaticamente como skill de projeto. O objetivo é reprodutibilidade: qualquer pessoa que clone o repositório do cliente tem acesso ao método inteiro, mesmo sem o plugin instalado na própria máquina. O plugin instalado continua sendo a fábrica central (onde uma correção nasce); propagar essa correção para um projeto já criado é um passo deliberado — ver `references/10-vendorizacao-e-atualizacao.md`.
+
+## `prompts/`: roteiros por camada, escaffoldados por padrão
+
+`scaffold_cliente.py` também copia para `prompts/` os roteiros por tipo de entrega (`criar_silver.md`, `criar_gold.md`, `documentar_produto.md`) — cada um no formato "instrução pro humano + bloco de prompt pronto pra colar pro agente". Um pedido de entrega recorrente vira uma linha: seguir o roteiro X para a entidade Y, em vez de reexplicar o processo a cada pedido. Deixa de ser pasta rara/vazia por padrão; ainda pode ganhar um roteiro genuinamente específico deste cliente além dos três padrão, quando surgir a necessidade.
+
+## `.skills/` (raro): skill específica deste projeto
+
+Diferente da skill vendorizada acima (que é uma cópia desta skill genérica), `.skills/` no projeto é para o caso raro de uma skill genuinamente específica deste cliente, que não faz sentido subir para a skill genérica. Fica vazia por padrão — usada só quando surgir a necessidade real. Skill de projeto real também vai em `.claude/skills/<nome>/` para ser carregada automaticamente (mesma convenção da skill vendorizada), nunca em `.skills/` sem o `.claude/` — esse caminho não é descoberto pelo Claude Code.
 
 ## Convenção de nomes
 
