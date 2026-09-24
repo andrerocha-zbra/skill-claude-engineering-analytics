@@ -1,7 +1,7 @@
 {
   "name": "analytics-project-architect",
   "description": "Skill guarda-chuva para projetos de engenharia de analytics (BI, datalake, ML): kickoff -> estrutura -> entrega -> handoff, agnostica de empresa e de cliente.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "SEU_NOME",
     "email": "seu-email@exemplo.com"

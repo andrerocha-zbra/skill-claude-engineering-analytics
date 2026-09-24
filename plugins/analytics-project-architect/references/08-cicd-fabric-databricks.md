@@ -63,6 +63,30 @@ Ver `07-mecanismos-e-hooks.md` (mecanismo M4) para as pegadinhas de assincronia 
 
 **Testar num workspace sandbox não isola o git.** O isolamento entre um workspace de teste e o de produção existe só no nível do workspace Fabric — se o sandbox aponta para a mesma pasta git da produção (mesmo repo, mesma pasta, ainda que branch diferente não resolva se o merge for para a mesma branch), qualquer Commit feito a partir do sandbox escreve ao lado do código real. Para testar reconexão de Git integration com segurança de verdade, aponte o sandbox para uma pasta ou repo descartável, nunca para a pasta git de produção.
 
+## Reconectar um workspace de produção já existente (não vazio)
+
+Cenário bem diferente do anterior: o workspace já roda em produção há tempo, sem controle de versão, com itens reais (notebooks, Lakehouse, MirroredDatabase, pipelines) — não um workspace vazio esperando a primeira conexão. Aqui o risco de perda/quebra é real, a sequência muda, e três achados concretos (validados num workspace de produção real) mudam a forma de conduzir isso.
+
+**1. Reconciliar o inventário do Fabric contra a orquestração local antes de julgar o que é "sobra".** Um item que existe no workspace mas não no repo local não é necessariamente lixo/esquecido — pode ser o inverso: um notebook criado direto em produção que nunca foi capturado no repo (gap do repo, não do workspace). Antes de sugerir limpeza de qualquer item "estranho" (nome com `_BCKP`, pasta `dev_*`, etc.), cruze com **qualquer fonte de orquestração/config local** (o CSV metadata-driven, `databricks.yml`) — nome sozinho não é prova suficiente. O inverso também acontece: o CSV pode estar desatualizado (linha com `notebook_id` placeholder para um notebook que já existe de verdade em produção há tempo). Reconciliar esse tipo de arquivo config-como-fonte-de-verdade é um passo obrigatório antes de qualquer limpeza de workspace existente, não algo a assumir como já correto.
+
+**2. P0 — binding de Lakehouse é GUID versionado dentro do próprio notebook.** O bloco `# META` de todo notebook (ver estrutura acima) grava `default_lakehouse`, `default_lakehouse_name` e **`default_lakehouse_workspace_id`** como GUIDs literais, e isso é commitado no git junto com o resto. Consequência séria: popular um workspace de **desenvolvimento** via `Update from Git` simples (branch-out cru) a partir do histórico de um workspace de **produção** deixa os notebooks importados, por padrão, lendo/gravando na Lakehouse de PRODUÇÃO — o binding é por GUID de workspace, não por nome. O isolamento pareceria existir e não existiria. **Git integration sozinho não reescreve esse binding.** A única correção é **Fabric Deployment Pipelines com *deployment rules*** — é o único mecanismo que reescreve o binding de Lakehouse por estágio. Nunca declare um ambiente de dev "isolado" sem validar empiricamente: leia a definição de um notebook importado e confira se o GUID de `default_lakehouse_workspace_id` de fato mudou para o do workspace novo.
+
+**3. Deployment Pipelines e Git integration são mecanismos independentes que podem conflitar silenciosamente.** Os dois podem coexistir no mesmo workspace (padrão recomendado pela própria Microsoft — branch por estágio), mas "Deploy" (promoção via pipeline) e "Commit/Update from Git" são caminhos de mudança de estado totalmente independentes um do outro. Sem uma regra explícita de qual é o caminho oficial de promoção, alguém pode usar o botão *Deploy* para levar algo a produção **contornando completamente** o gate de PR/CI configurado do lado Git. Defina e documente em `PROJETO.md`/`CLAUDE.md` qual mecanismo é a via oficial — recomendado: **merge de PR no Git é o único caminho oficial para promover código**; *Deploy* fica reservado só para rebind de conexão via deployment rules (achado 2 acima), nunca como atalho de promoção.
+
+**O que cada tipo de item realmente suporta em Git integration** (verificado na documentação oficial do Fabric):
+
+| Item | Git integration | Nível |
+|---|---|---|
+| Notebook | `.py` percent-format + `.platform`, binding de Lakehouse por GUID junto (achado 2) | GA |
+| Lakehouse | Só metadata/shortcuts/DAR — tabelas e arquivos **nunca** são tocados (dado sempre preservado) | GA |
+| MirroredDatabase | Só o item; SQL endpoint e filhos não são rastreados | GA (recente) |
+| DataAgent | Estrutura própria (`files/config/draft`, `published`) | Preview |
+| DataPipeline, CopyJob | Suportado em Deployment Pipelines; Git integration direto nesses dois ainda não verificado | Não verificado |
+
+**Prazo real, não hipotético:** a partir de **1º de dezembro de 2026**, usuários sem permissão read-write nos itens do workspace perdem acesso ao Git integration daquele workspace. Vale um lembrete em qualquer checklist de kickoff/reconexão feito a partir de agora.
+
+**Bootstrap do zero (sem workspace de produção prévio) não tem nada disso.** Sem bagunça pra reconciliar (achado 1) e sem binding de produção pra proteger (achado 2), o fluxo é o das seções "Configuração" acima: criar Deployment Pipeline com deployment rules desde o início (sem precisar reescrever nada depois), criar o workspace vazio, conectar direto, popular via `converter_ipynb_fabric.py`/`create_item` ou autoria no portal. Os três achados desta seção só se aplicam ao caminho "workspace já existe e está sujo".
+
 ## Databricks
 
 Git folders do Databricks (Repos) suportam **sparse checkout por "cone pattern"**: você lista explicitamente as subpastas a clonar. A própria Databricks recomenda isso para monorepos — sem sparse checkout, um repo grande pode estourar limites de memória/disco do Git folder e deixar as operações lentas.

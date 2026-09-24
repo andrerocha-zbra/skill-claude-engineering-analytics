@@ -39,6 +39,8 @@ Consequência prática:
 
 Rode `scripts/limpar_notebook_import.py CAMINHO.ipynb` antes de reimportar. O script zera outputs/execution_count, normaliza `source` para lista de linhas, grava UTF-8 sem BOM, preserva toda a metadata da plataforma (`kernelspec`, `microsoft`, `spark_compute`, `dependencies`).
 
+**Cego a `.py` percent-format, de propósito.** O hook `validar_notebook.py` (`.claude/hooks/`) só valida `.ipynb` (JSON + `ast.parse` por célula) — é o formato de origem no núcleo deste método. Depois que o Git integration do Fabric é conectado (`08-cicd-fabric-databricks.md`), `_tech-sync/` passa a receber também `notebook-content.py` em percent-format (o formato nativo que o próprio Fabric exporta) — e esse formato não passa por `validar_notebook.py` nem pelo gate de CI, se o gate também só varrer `*.ipynb`. Não é só o `azure-pipelines.yml`/workflow que precisa lembrar disso — o hook local igualmente fica cego, silenciosamente, porque não está no caminho óbvio de "CI/CD". Ao introduzir ou revisar qualquer projeto onde o Git integration já está ativo, confira os dois: o gate de pipeline **e** os hooks locais de validação.
+
 ### M3 — Verificação (sanity-check de entrega)
 
 Checklist antes de fechar qualquer fase:
