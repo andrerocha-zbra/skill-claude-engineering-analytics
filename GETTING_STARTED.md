@@ -2,6 +2,27 @@
 
 Uma skill do Claude Code que estrutura um projeto de engenharia de analytics — BI, datalake, ML — do kickoff ao handoff, com pastas padrão, um log vivo, hooks e scripts reais. Serve tanto para começar um projeto do zero quanto para reorganizar um projeto que já existe.
 
+## Instalação (uma vez por máquina — funciona de primeira em qualquer projeto, inclusive no VS Code)
+
+```
+/plugin marketplace add andrerocha-zbra/skill-claude-engineering-analytics
+/plugin install analytics-project-architect@analytics-engineering-harness --scope user
+```
+
+`--scope user` instala em **escopo de usuário** (global): fica disponível em qualquer projeto/workspace que você abrir depois nessa máquina, sem precisar rodar `/plugin install` de novo por projeto. Se o Claude Code abrir um prompt interativo perguntando o escopo (por exemplo, se você rodar sem `--scope`), escolha **"user"/"global"** — nunca "project" (esse instala só pro repositório atual) nem "local" (só pra você, só naquele repositório).
+
+**Funciona igual dentro do VS Code.** A extensão oficial do Claude Code usa o mesmo painel/comandos `/plugin` (ou o diálogo "Manage plugins" da extensão) e grava no mesmo arquivo de configuração de usuário — não existe uma instalação separada "só pro VS Code". Depois de instalar, não precisa reiniciar o VS Code: só abrir uma sessão nova do Claude Code (ou rodar `/reload-plugins`, se a sessão já estiver aberta) pra carregar o plugin.
+
+Confirme que instalou:
+
+```
+/plugin
+```
+
+→ aba "Installed" deve listar `analytics-project-architect`. No terminal, `claude plugin list --enabled` mostra o mesmo.
+
+Os MCPs bundled no plugin (`fabric` e `powerbi-modeling-mcp`, ver `.mcp.json` da skill) ativam sozinhos junto com o plugin — sem passo extra. Exceção: `powerbi-modeling-mcp` roda um executável local específico da máquina (vem de uma extensão do VS Code) — ainda não existe nenhum projeto agora, então esse caminho só é resolvido depois de criar o primeiro projeto (`scaffold_cliente.py` já lembra disso no próprio output, "Próximos passos"). Se quiser resolver antes de ter um projeto, rode `detectar_powerbi_modeling_mcp.py --global` a partir de dentro do plugin instalado (`claude plugin list` mostra o caminho de instalação). O MCP `fabric` não precisa desse passo — autentica sozinho via OAuth no primeiro uso.
+
 ## Como as peças se encaixam
 
 ```mermaid
